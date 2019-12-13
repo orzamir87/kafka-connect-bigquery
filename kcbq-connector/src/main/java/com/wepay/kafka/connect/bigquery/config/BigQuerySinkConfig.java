@@ -217,9 +217,10 @@ public class BigQuerySinkConfig extends AbstractConfig {
           + " to enable ingestion time partitioning for each table.";
 
   public static final String FIELD_NAME_CONVERTERS_CONFIG = "fieldNameConverters";
-  private static final ConfigDef.Type FIELD_NAME_CONVERTERS_TYPE = ConfigDef.Type.STRING;
+  private static final ConfigDef.Type FIELD_NAME_CONVERTERS_TYPE = ConfigDef.Type.LIST;
   private static final String FIELD_NAME_CONVERTERS_DEFAULT = "";
-  private static final ConfigDef.Importance FIELD_NAME_CONVERTERS_MPORTANCE =
+  private static final ConfigDef.Validator FIELD_NAME_CONVERTERS_VALIDATOR = validator;
+  private static final ConfigDef.Importance FIELD_NAME_CONVERTERS_IMPORTANCE =
           ConfigDef.Importance.LOW;
   private static final String FIELD_NAME_CONVERTERS_DOC =
       "Map for field specific converters that will apply between the kafka record and big query."
@@ -345,7 +346,8 @@ public class BigQuerySinkConfig extends AbstractConfig {
             FIELD_NAME_CONVERTERS_CONFIG,
             FIELD_NAME_CONVERTERS_TYPE,
             FIELD_NAME_CONVERTERS_DEFAULT,
-            FIELD_NAME_CONVERTERS_MPORTANCE,
+            FIELD_NAME_CONVERTERS_VALIDATOR,
+            FIELD_NAME_CONVERTERS_IMPORTANCE,
             FIELD_NAME_CONVERTERS_DOC);
   }
 
@@ -358,6 +360,9 @@ public class BigQuerySinkConfig extends AbstractConfig {
           ensureValidMap(name, (List<String>) value);
           break;
         case TOPICS_TO_TABLES_CONFIG:
+          ensureValidMap(name, (List<String>) value);
+          break;
+        case FIELD_NAME_CONVERTERS_CONFIG:
           ensureValidMap(name, (List<String>) value);
           break;
         default:
@@ -527,7 +532,7 @@ public class BigQuerySinkConfig extends AbstractConfig {
    * @return a {@link SchemaConverter} for BigQuery.
    */
   public SchemaConverter<Schema> getSchemaConverter() {
-    Map<String, String> fieldNameConverters = getMap(FIELD_NAME_CONVERTERS_CONFIG);
+    Map<String, String> fieldNameConverters = getFieldNameSpecificConverters();
     boolean allFieldsNullable = getBoolean(ALL_BQ_FIELDS_NULLABLE_CONFIG);
     boolean includeKafkaData = getBoolean(INCLUDE_KAFKA_DATA_CONFIG);
 
@@ -535,6 +540,10 @@ public class BigQuerySinkConfig extends AbstractConfig {
         ? new KafkaDataBQSchemaConverter(allFieldsNullable, fieldNameConverters)
         : new BigQuerySchemaConverter(allFieldsNullable, fieldNameConverters);
 
+  }
+
+  public Map<String, String> getFieldNameSpecificConverters() {
+    return getMap(FIELD_NAME_CONVERTERS_CONFIG);
   }
 
   /**

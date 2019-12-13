@@ -117,6 +117,25 @@ public class BigQuerySinkConfigTest {
     assertEquals("name", testConfig.getTimestampPartitionFieldName());
   }
 
+  @Test
+  public void testFieldNameConverters() {
+    Map<String, String> configProperties = propertiesFactory.getProperties();
+    configProperties.put(BigQuerySinkConfig.FIELD_NAME_CONVERTERS_CONFIG,
+            "CreatedOn=NumberInSecondsToTimestampEST,DayID=IntyyyyMMddToDate," +
+            "CreatedOnUTC=NumberInSecondsToTimestampUTC,DayIDUtc=IntyyyyMMddToDate");
+
+    BigQuerySinkConfig testConfig = new BigQuerySinkConfig(configProperties);
+
+    Map<String, String> expectedMap = new HashMap<String, String>() {{
+      put("CreatedOn", "NumberInSecondsToTimestampEST");
+      put("CreatedOnUTC", "NumberInSecondsToTimestampUTC");
+      put("DayID", "IntyyyyMMddToDate");
+      put("DayIDUtc", "IntyyyyMMddToDate");
+    }};
+
+    assertEquals(expectedMap, testConfig.getFieldNameSpecificConverters());
+  }
+
   @Test(expected = ConfigException.class)
   public void testFailedDatasetMatch() {
     Map<String, String> badConfigProperties = propertiesFactory.getProperties();
