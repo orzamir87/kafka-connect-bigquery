@@ -42,6 +42,7 @@ public class KafkaDataBQRecordConvertTest {
   private static final String kafkaDataInsertTimeName = "insertTime";
 
   private static final Boolean SHOULD_CONVERT_DOUBLE = true;
+  private static final Map<String,String> EMPTY_MAP = new HashMap<>();
 
   @Test
   public void test() {
@@ -71,7 +72,7 @@ public class KafkaDataBQRecordConvertTest {
                                                     kafkaDataPartitionValue,
                                                     kafkaDataOffsetValue);
     Map<String, Object> bigQueryActualRecord =
-        new KafkaDataBQRecordConverter(SHOULD_CONVERT_DOUBLE).convertRecord(kafkaConnectRecord);
+        new KafkaDataBQRecordConverter(SHOULD_CONVERT_DOUBLE, EMPTY_MAP).convertRecord(kafkaConnectRecord);
     checkRecord(bigQueryExpectedRecord, bigQueryActualRecord);
   }
 

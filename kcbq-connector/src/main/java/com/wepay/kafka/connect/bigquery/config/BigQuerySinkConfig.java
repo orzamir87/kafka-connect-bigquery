@@ -216,6 +216,16 @@ public class BigQuerySinkConfig extends AbstractConfig {
           + " and enable timestamp partitioning for each table. Leave this configuration blank,"
           + " to enable ingestion time partitioning for each table.";
 
+  public static final String FIELD_NAME_CONVERTERS_CONFIG = "fieldNameConverters";
+  private static final ConfigDef.Type FIELD_NAME_CONVERTERS_TYPE = ConfigDef.Type.STRING;
+  private static final String FIELD_NAME_CONVERTERS_DEFAULT = "";
+  private static final ConfigDef.Importance FIELD_NAME_CONVERTERS_MPORTANCE =
+          ConfigDef.Importance.LOW;
+  private static final String FIELD_NAME_CONVERTERS_DOC =
+      "Map for field specific converters that will apply between the kafka record and big query."
+          + " the format of the argument is <field name1>=<converter name1>,<field name2>=<converter name2> etc..."
+          + " for example: CreatedOn=NumberInSecondsToTimestampEST,DayID=IntyyyyMMddToDateEST";
+
   static {
     config = new ConfigDef()
         .define(
@@ -331,7 +341,12 @@ public class BigQuerySinkConfig extends AbstractConfig {
             TIMESTAMP_PARTITION_FIELD_NAME_DEFAULT,
             TIMESTAMP_PARTITION_FIELD_NAME_IMPORTANCE,
             TIMESTAMP_PARTITION_FIELD_NAME_DOC
-        );
+        ).define(
+            FIELD_NAME_CONVERTERS_CONFIG,
+            FIELD_NAME_CONVERTERS_TYPE,
+            FIELD_NAME_CONVERTERS_DEFAULT,
+            FIELD_NAME_CONVERTERS_MPORTANCE,
+            FIELD_NAME_CONVERTERS_DOC);
   }
 
   @SuppressWarnings("unchecked")
@@ -512,9 +527,14 @@ public class BigQuerySinkConfig extends AbstractConfig {
    * @return a {@link SchemaConverter} for BigQuery.
    */
   public SchemaConverter<Schema> getSchemaConverter() {
-    return getBoolean(INCLUDE_KAFKA_DATA_CONFIG)
-        ? new KafkaDataBQSchemaConverter(getBoolean(ALL_BQ_FIELDS_NULLABLE_CONFIG))
-        : new BigQuerySchemaConverter(getBoolean(ALL_BQ_FIELDS_NULLABLE_CONFIG));
+    Map<String, String> fieldNameConverters = getMap(FIELD_NAME_CONVERTERS_CONFIG);
+    boolean allFieldsNullable = getBoolean(ALL_BQ_FIELDS_NULLABLE_CONFIG);
+    boolean includeKafkaData = getBoolean(INCLUDE_KAFKA_DATA_CONFIG);
+
+    return includeKafkaData
+        ? new KafkaDataBQSchemaConverter(allFieldsNullable, fieldNameConverters)
+        : new BigQuerySchemaConverter(allFieldsNullable, fieldNameConverters);
+
   }
 
   /**
@@ -522,9 +542,13 @@ public class BigQuerySinkConfig extends AbstractConfig {
    * @return a {@link RecordConverter} for BigQuery.
    */
   public RecordConverter<Map<String, Object>> getRecordConverter() {
-    return getBoolean(INCLUDE_KAFKA_DATA_CONFIG)
-        ? new KafkaDataBQRecordConverter(getBoolean(CONVERT_DOUBLE_SPECIAL_VALUES_CONFIG))
-        : new BigQueryRecordConverter(getBoolean(CONVERT_DOUBLE_SPECIAL_VALUES_CONFIG));
+    Map<String, String> fieldNameConverters = getMap(FIELD_NAME_CONVERTERS_CONFIG);
+    boolean shouldConvertDoubleSpecial = getBoolean(CONVERT_DOUBLE_SPECIAL_VALUES_CONFIG);
+    boolean includeKafkaData = getBoolean(INCLUDE_KAFKA_DATA_CONFIG);
+
+    return includeKafkaData
+        ? new KafkaDataBQRecordConverter(shouldConvertDoubleSpecial, fieldNameConverters)
+        : new BigQueryRecordConverter(shouldConvertDoubleSpecial, fieldNameConverters);
   }
 
   /**

@@ -19,6 +19,8 @@ package com.wepay.kafka.connect.bigquery.convert;
 
 
 import com.google.cloud.bigquery.InsertAllRequest.RowToInsert;
+import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverterRegistry;
+import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.DebeziumLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.KafkaLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.LogicalConverterRegistry;
@@ -57,10 +59,14 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
     // force registration
     new DebeziumLogicalConverters();
     new KafkaLogicalConverters();
+    new FieldNameConverters();
   }
 
-  public BigQueryRecordConverter(boolean shouldConvertDoubleSpecial) {
+  public BigQueryRecordConverter(boolean shouldConvertDoubleSpecial, Map<String, String> fieldSpecificConverters) {
     this.shouldConvertSpecialDouble = shouldConvertDoubleSpecial;
+    for (Map.Entry<String, String> entry : fieldSpecificConverters.entrySet()) {
+      FieldNameConverterRegistry.register(entry.getKey(), entry.getValue());
+    }
   }
 
   /**
@@ -178,10 +184,17 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
     List<Field> kafkaConnectSchemaFields = kafkaConnectSchema.fields();
     Struct kafkaConnectStruct = (Struct) kafkaConnectObject;
     for (Field kafkaConnectField : kafkaConnectSchemaFields) {
-      Object bigQueryObject = convertObject(
-          kafkaConnectStruct.get(kafkaConnectField.name()),
-          kafkaConnectField.schema()
-      );
+      Object bigQueryObject;
+      if (FieldNameConverterRegistry.isRegisteredFieldName(kafkaConnectField.name())) {
+        bigQueryObject = FieldNameConverterRegistry.getConverter(kafkaConnectField.name())
+                .convert(kafkaConnectStruct.get(kafkaConnectField.name()), kafkaConnectField.schema().type());
+      }
+      else {
+        bigQueryObject = convertObject(
+                kafkaConnectStruct.get(kafkaConnectField.name()),
+                kafkaConnectField.schema()
+        );
+      }
       if (bigQueryObject != null) {
         bigQueryRecord.put(kafkaConnectField.name(), bigQueryObject);
       }

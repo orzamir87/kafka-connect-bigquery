@@ -27,6 +27,7 @@ import org.apache.kafka.connect.data.Schema;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Class for converting from {@link Schema Kafka Connect Schemas} to
@@ -42,8 +43,8 @@ public class KafkaDataBQSchemaConverter extends BigQuerySchemaConverter {
   /* package private */ static final String KAFKA_DATA_OFFSET_FIELD_NAME = "offset";
   /* package private */ static final String KAFKA_DATA_INSERT_TIME_FIELD_NAME = "insertTime";
 
-  public KafkaDataBQSchemaConverter(boolean allFieldsNullable) {
-    super(allFieldsNullable);
+  public KafkaDataBQSchemaConverter(boolean allFieldsNullable, Map<String, String> fieldSpecificConverters) {
+    super(allFieldsNullable, fieldSpecificConverters);
   }
 
   /**

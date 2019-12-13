@@ -35,8 +35,8 @@ import java.util.Map;
  */
 public class KafkaDataBQRecordConverter extends BigQueryRecordConverter {
 
-  public KafkaDataBQRecordConverter(boolean shouldConvertDoubleSpecial) {
-    super(shouldConvertDoubleSpecial);
+  public KafkaDataBQRecordConverter(boolean shouldConvertDoubleSpecial, Map<String, String> fieldSpecificConverters) {
+    super(shouldConvertDoubleSpecial, fieldSpecificConverters);
   }
 
   /**

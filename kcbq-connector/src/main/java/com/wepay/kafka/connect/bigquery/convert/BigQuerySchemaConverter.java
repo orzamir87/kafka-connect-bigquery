@@ -21,6 +21,9 @@ package com.wepay.kafka.connect.bigquery.convert;
 import com.google.cloud.bigquery.FieldList;
 import com.google.cloud.bigquery.LegacySQLTypeName;
 
+import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverter;
+import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverterRegistry;
+import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.DebeziumLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.KafkaLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.LogicalConverterRegistry;
@@ -58,6 +61,7 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
     // force registration
     new DebeziumLogicalConverters();
     new KafkaLogicalConverters();
+    new FieldNameConverters();
 
     PRIMITIVE_TYPE_MAP = new HashMap<>();
     PRIMITIVE_TYPE_MAP.put(Schema.Type.BOOLEAN,
@@ -82,8 +86,11 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
 
   private final boolean allFieldsNullable;
 
-  public BigQuerySchemaConverter(boolean allFieldsNullable) {
+  public BigQuerySchemaConverter(boolean allFieldsNullable, Map<String, String> fieldSpecificConverters) {
     this.allFieldsNullable = allFieldsNullable;
+    for (Map.Entry<String, String> entry : fieldSpecificConverters.entrySet()) {
+      FieldNameConverterRegistry.register(entry.getKey(), entry.getValue());
+    }
   }
 
   /**
@@ -117,7 +124,9 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
                                                                String fieldName) {
     com.google.cloud.bigquery.Field.Builder result;
     Schema.Type kafkaConnectSchemaType = kafkaConnectSchema.type();
-    if (LogicalConverterRegistry.isRegisteredLogicalType(kafkaConnectSchema.name())) {
+    if (FieldNameConverterRegistry.isRegisteredFieldName(fieldName)) {
+      result = convertSpecificFieldName(fieldName);
+    } else if (LogicalConverterRegistry.isRegisteredLogicalType(kafkaConnectSchema.name())) {
       result = convertLogical(kafkaConnectSchema, fieldName);
     } else if (PRIMITIVE_TYPE_MAP.containsKey(kafkaConnectSchemaType)) {
       result = convertPrimitive(kafkaConnectSchema, fieldName);
@@ -217,5 +226,10 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
         LogicalConverterRegistry.getConverter(kafkaConnectSchema.name());
     converter.checkEncodingType(kafkaConnectSchema.type());
     return com.google.cloud.bigquery.Field.newBuilder(fieldName, converter.getBQSchemaType());
+  }
+
+  private com.google.cloud.bigquery.Field.Builder convertSpecificFieldName(String fieldName) {
+    return com.google.cloud.bigquery.Field.newBuilder(fieldName,
+            FieldNameConverterRegistry.getConverter(fieldName).getBQSchemaType());
   }
 }

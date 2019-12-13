@@ -28,7 +28,12 @@ import org.apache.kafka.connect.data.SchemaBuilder;
 
 import org.junit.Test;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class KafkaDataBQSchemaConverterTest {
+
+  private static final Map<String,String> EMPTY_MAP = new HashMap<>();
 
   @Test
   public void test() {
@@ -43,7 +48,7 @@ public class KafkaDataBQSchemaConverterTest {
         com.google.cloud.bigquery.Schema.of(baseField, kafkaDataField);
 
     com.google.cloud.bigquery.Schema bigQueryActualSchema =
-        new KafkaDataBQSchemaConverter(false).convertSchema(kafkaConnectTestSchema);
+        new KafkaDataBQSchemaConverter(false, EMPTY_MAP).convertSchema(kafkaConnectTestSchema);
     assertEquals(bigQueryExpectedSchema, bigQueryActualSchema);
   }
 
