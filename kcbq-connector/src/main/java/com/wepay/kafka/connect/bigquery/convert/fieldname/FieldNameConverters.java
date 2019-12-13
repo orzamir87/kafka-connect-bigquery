@@ -59,12 +59,21 @@ public class FieldNameConverters {
 
         @Override
         public String convert(Object kafkaConnectObject, Schema.Type kafkaConnectSchemaType) {
-            if (kafkaConnectSchemaType != Schema.Type.INT32) {
-                throw new ConversionConnectException("can't convert type " + kafkaConnectSchemaType + " to Date");
+            String dateNumberStr;
+            switch (kafkaConnectSchemaType)
+            {
+                case INT64:
+                    dateNumberStr = ((Long)kafkaConnectObject).toString();
+                    break;
+                case INT32:
+                    dateNumberStr = ((Integer)kafkaConnectObject).toString();
+                    break;
+                default:
+                    throw new ConversionConnectException("can't convert " + kafkaConnectSchemaType + " to Timestamp");
             }
+
             try {
-                java.util.Date d = intDateFormat.parse(((Integer)kafkaConnectObject).toString());
-                return getBQDateFormat().format(d);
+                return getBQDateFormat().format(intDateFormat.parse(dateNumberStr));
             } catch (ParseException e) {
                 throw new ConversionConnectException("can't convert " + kafkaConnectObject + " to yyyyMMdd Date");
             }

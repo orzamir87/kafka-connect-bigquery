@@ -25,11 +25,13 @@ public class FieldNameConverterTest {
     public void testRecordConvertIntyyyyMMddToDate() {
 
         final String fieldNameUTC = "DayIDUTC";
-        final int fieldValueUTC = 20191211;
+        final long fieldValueUTC = 20191211L;
+        final int fieldValueUTCint = 20191211;
         final String expectedValueUTC = "2019-12-11";
 
         final String fieldNameEST = "DayID";
-        final int fieldValueEST = 20191211;
+        final long fieldValueEST = 20191211L;
+        final int fieldValueESTint = 20191211;
         final String expectedValueEST = "2019-12-11";
 
         final Map<String,String> fieldNameMap = new HashMap<String, String>() {{
@@ -37,8 +39,10 @@ public class FieldNameConverterTest {
             put(fieldNameEST, FieldNameConverters.IntyyyyMMddToDate.CONVERTER_NAME);
         }};
 
-        testRecordConvert(fieldNameUTC, fieldValueUTC, Schema.INT32_SCHEMA, expectedValueUTC, fieldNameMap);
-        testRecordConvert(fieldNameEST, fieldValueEST, Schema.INT32_SCHEMA, expectedValueEST, fieldNameMap);
+        testRecordConvert(fieldNameUTC, fieldValueUTC, Schema.INT64_SCHEMA, expectedValueUTC, fieldNameMap);
+        testRecordConvert(fieldNameEST, fieldValueEST, Schema.INT64_SCHEMA, expectedValueEST, fieldNameMap);
+        testRecordConvert(fieldNameUTC, fieldValueUTCint, Schema.INT32_SCHEMA, expectedValueUTC, fieldNameMap);
+        testRecordConvert(fieldNameEST, fieldValueESTint, Schema.INT32_SCHEMA, expectedValueEST, fieldNameMap);
     }
 
     @Test
@@ -46,6 +50,8 @@ public class FieldNameConverterTest {
         final String fieldName = "DayID";
 
         testSchemaConvert(fieldName, Schema.INT32_SCHEMA,
+                new FieldNameConverters.IntyyyyMMddToDate(), LegacySQLTypeName.DATE);
+        testSchemaConvert(fieldName, Schema.INT64_SCHEMA,
                 new FieldNameConverters.IntyyyyMMddToDate(), LegacySQLTypeName.DATE);
     }
 
