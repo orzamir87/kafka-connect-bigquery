@@ -13,7 +13,6 @@ import org.apache.kafka.connect.sink.SinkRecord;
 
 import org.junit.Test;
 
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -61,12 +60,12 @@ public class FieldNameConverterTest {
         final String fieldNameUTC = "CreatedOnUTC";
         final long fieldValueUTC = 1576078615L;
         final int fieldValueUTCint = 1576078615;
-        final String expectedValueUTC = "2019-12-11 15:36:55.000";
+        final String expectedValueUTC = "2019-12-11 15:36:55.000Z";
 
         final String fieldNameEST = "CreatedOnEST";
         final long fieldValueEST = 1576078615L;
         final int fieldValueESTint = 1576078615;
-        final String expectedValueEST = "2019-12-11 10:36:55.000";
+        final String expectedValueEST = "2019-12-11 15:36:55.000-05:00";
 
         final Map<String,String> fieldNameMap = new HashMap<String, String>() {{
             put(fieldNameUTC, FieldNameConverters.NumberInSecondsToTimestampUTC.CONVERTER_NAME);

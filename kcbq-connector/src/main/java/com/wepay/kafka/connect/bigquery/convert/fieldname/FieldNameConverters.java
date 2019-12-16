@@ -6,7 +6,10 @@ import org.apache.kafka.connect.data.Schema;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.TimeZone;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 
 public class FieldNameConverters {
 
@@ -21,21 +24,19 @@ public class FieldNameConverters {
 
     public static class NumberInSecondsToTimestampUTC extends NumberInSecondsToTimestamp {
 
-        private static final TimeZone utcTimeZone = TimeZone.getTimeZone("UTC");
         public static final String CONVERTER_NAME = "NumberInSecondsToTimestampUTC";
 
         public NumberInSecondsToTimestampUTC() {
-            super(utcTimeZone, CONVERTER_NAME);
+            super(ZoneId.of("UTC"), CONVERTER_NAME);
         }
     }
 
     public static class NumberInSecondsToTimestampEST extends NumberInSecondsToTimestamp {
 
-        private static final TimeZone estTimeZone = TimeZone.getTimeZone("EST");
         public static final String CONVERTER_NAME = "NumberInSecondsToTimestampEST";
 
         public NumberInSecondsToTimestampEST() {
-            super(estTimeZone, CONVERTER_NAME);
+            super(ZoneId.of("America/New_York"), CONVERTER_NAME);
         }
     }
 
@@ -85,10 +86,10 @@ public class FieldNameConverters {
      */
     protected static class NumberInSecondsToTimestamp extends FieldNameConverter {
 
-        private final TimeZone timeZone;
+        private final ZoneId timeZone;
         private final String converterName;
 
-        public NumberInSecondsToTimestamp(TimeZone timeZone, String converterName) {
+        public NumberInSecondsToTimestamp(ZoneId timeZone, String converterName) {
             super(LegacySQLTypeName.TIMESTAMP);
             this.timeZone = timeZone;
             this.converterName = converterName;
@@ -101,23 +102,23 @@ public class FieldNameConverters {
 
         @Override
         public String convert(Object kafkaConnectObject, Schema.Type kafkaConnectSchemaType) {
+            LocalDateTime ldt;
             switch (kafkaConnectSchemaType)
             {
                 case INT64:
-                    return getBqTimestampFormat(timeZone).format(new java.util.Date((Long) kafkaConnectObject * 1000));
+                    ldt = LocalDateTime.ofEpochSecond((Long) kafkaConnectObject, 0, ZoneOffset.UTC);
+                    break;
                 case INT32:
-                    return getBqTimestampFormat(timeZone).format(new java.util.Date(((Integer)kafkaConnectObject).longValue() * 1000));
+                    ldt = LocalDateTime.ofEpochSecond(((Integer)kafkaConnectObject).longValue(), 0, ZoneOffset.UTC);
+                    break;
                 default:
                     throw new ConversionConnectException("can't convert " + kafkaConnectSchemaType + " to Timestamp");
             }
+            return getBqTimestampFormat.format(ldt.atZone(timeZone));
         }
     }
 
-    protected static SimpleDateFormat getBqTimestampFormat(TimeZone timeZone) {
-        SimpleDateFormat bqTimestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-        bqTimestampFormat.setTimeZone(timeZone);
-        return bqTimestampFormat;
-    }
+    private static final DateTimeFormatter getBqTimestampFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSXXX");
 
     protected static SimpleDateFormat getBQDateFormat() {
         return new SimpleDateFormat("yyyy-MM-dd");
