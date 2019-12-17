@@ -75,7 +75,7 @@ public class FieldNameConverters {
 
             try {
                 return getBQDateFormat().format(intDateFormat.parse(dateNumberStr));
-            } catch (ParseException e) {
+            } catch (Exception e) {
                 throw new ConversionConnectException("can't convert " + kafkaConnectObject + " to yyyyMMdd Date");
             }
         }
