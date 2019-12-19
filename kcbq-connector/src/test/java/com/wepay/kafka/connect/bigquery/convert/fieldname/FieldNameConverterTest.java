@@ -24,13 +24,13 @@ public class FieldNameConverterTest {
     public void testRecordConvertIntyyyyMMddToDate() {
 
         final String fieldNameUTC = "DayIDUTC";
-        final long fieldValueUTC = 20191211L;
-        final int fieldValueUTCint = 20191211;
-        final String expectedValueUTC = "2019-12-11";
+        final Long fieldValueUTC = 20191217L;
+        final Integer fieldValueUTCint = 20191217;
+        final String expectedValueUTC = "2019-12-17";
 
         final String fieldNameEST = "DayID";
-        final long fieldValueEST = 20191211L;
-        final int fieldValueESTint = 20191211;
+        final Long fieldValueEST = 20191211L;
+        final Integer fieldValueESTint = 20191211;
         final String expectedValueEST = "2019-12-11";
 
         final Map<String,String> fieldNameMap = new HashMap<String, String>() {{

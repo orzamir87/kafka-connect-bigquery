@@ -72,12 +72,13 @@ public class FieldNameConverters {
                 default:
                     throw new ConversionConnectException("can't convert " + kafkaConnectSchemaType + " to Timestamp");
             }
-
-            try {
-                return getBQDateFormat().format(intDateFormat.parse(dateNumberStr));
-            } catch (Exception e) {
-                throw new ConversionConnectException("can't convert " + kafkaConnectObject + " to yyyyMMdd Date");
+            if (dateNumberStr.length() >= 8){
+                return String.format("%s-%s-%s",
+                        dateNumberStr.substring(0, 4),
+                        dateNumberStr.substring(4, 6),
+                        dateNumberStr.substring(6, 8));
             }
+            return dateNumberStr;
         }
     }
 
