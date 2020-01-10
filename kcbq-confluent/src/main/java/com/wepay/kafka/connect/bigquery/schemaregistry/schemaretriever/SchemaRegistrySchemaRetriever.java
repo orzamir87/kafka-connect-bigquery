@@ -32,6 +32,8 @@ public class SchemaRegistrySchemaRetriever implements SchemaRetriever {
 
   private SchemaRegistryClient schemaRegistryClient;
   private AvroData avroData;
+  private boolean isForcingSubjectName = false;
+  private String forcedSubjectName;
 
   /**
    * Only here because the package-private constructor (which is only used in testing) would
@@ -58,6 +60,11 @@ public class SchemaRegistrySchemaRetriever implements SchemaRetriever {
         schemaRegistryClientProperties
     );
     avroData = new AvroData(config.getInt(config.AVRO_DATA_CACHE_SIZE_CONFIG));
+    isForcingSubjectName = config.getString(config.FORCE_SUBJECT_CONFIG) != null &&
+            !config.getString(config.FORCE_SUBJECT_CONFIG).isEmpty();
+    if (isForcingSubjectName) {
+      forcedSubjectName = config.getString(config.FORCE_SUBJECT_CONFIG);
+    }
   }
 
   @Override
@@ -81,6 +88,6 @@ public class SchemaRegistrySchemaRetriever implements SchemaRetriever {
   public void setLastSeenSchema(TableId table, String topic, Schema schema) { }
 
   private String getSubject(String topic) {
-    return topic + "-value";
+    return isForcingSubjectName ? forcedSubjectName : topic + "-value";
   }
 }

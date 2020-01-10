@@ -32,6 +32,13 @@ public class SchemaRegistrySchemaRetrieverConfig extends AbstractConfig {
       "Configurations beginning with this prefix will be passed on to the underlying Schema "
           + "Registry client, with the prefix stripped.";
 
+  public static final String FORCE_SUBJECT_CONFIG =                     "schemaRegistryForceSubject";
+  private static final ConfigDef.Type FORCE_SUBJECT_TYPE =              ConfigDef.Type.STRING;
+  public static final String FORCE_SUBJECT_DEFAULT =                   null;
+  private static final ConfigDef.Importance FORCE_SUBJECT_IMPORTANCE =  ConfigDef.Importance.LOW;
+  private static final String FORCE_SUBJECT_DOC =
+          "Optionally force a single subject for the connector to use";
+
   static {
     config = new ConfigDef()
         .define(
@@ -46,6 +53,13 @@ public class SchemaRegistrySchemaRetrieverConfig extends AbstractConfig {
             AVRO_DATA_CACHE_SIZE_VALIDATOR,
             AVRO_DATA_CACHE_SIZE_IMPORTANCE,
             AVRO_DATA_CACHE_SIZE_DOC
+        )
+        .define(
+            FORCE_SUBJECT_CONFIG,
+            FORCE_SUBJECT_TYPE,
+            FORCE_SUBJECT_DEFAULT,
+            FORCE_SUBJECT_IMPORTANCE,
+            FORCE_SUBJECT_DOC
         );
   }
 
