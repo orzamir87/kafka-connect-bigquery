@@ -360,7 +360,10 @@ public class BigQuerySinkTask extends SinkTask {
       BucketInfo bucketInfo = BucketInfo.of(bucketName);
       bucket = gcs.create(bucketInfo);
     }
-    GCSToBQLoadRunnable loadRunnable = new GCSToBQLoadRunnable(getBigQuery(), bucket);
+    boolean updateSchemas = config.getBoolean(config.SCHEMA_UPDATE_CONFIG);
+    BigQuery bigquery = getBigQuery();
+    SchemaManager schemaManager = getSchemaManager(bigquery);
+    GCSToBQLoadRunnable loadRunnable = new GCSToBQLoadRunnable(bigquery, bucket, schemaManager, updateSchemas);
 
     int intervalSec = config.getInt(BigQuerySinkConfig.BATCH_LOAD_INTERVAL_SEC_CONFIG);
     gcsLoadExecutor.scheduleAtFixedRate(loadRunnable, intervalSec, intervalSec, TimeUnit.SECONDS);
