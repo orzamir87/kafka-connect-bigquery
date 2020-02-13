@@ -25,9 +25,11 @@ import com.google.cloud.storage.Bucket;
 import com.google.cloud.storage.BucketInfo;
 import com.google.cloud.storage.Storage;
 import com.google.common.annotations.VisibleForTesting;
+import com.wepay.kafka.connect.bigquery.api.KafkaSchemaRecordType;
 import com.wepay.kafka.connect.bigquery.api.SchemaRetriever;
 import com.wepay.kafka.connect.bigquery.config.BigQuerySinkConfig;
 import com.wepay.kafka.connect.bigquery.config.BigQuerySinkTaskConfig;
+import com.wepay.kafka.connect.bigquery.convert.KafkaDataBuilder;
 import com.wepay.kafka.connect.bigquery.convert.RecordConverter;
 import com.wepay.kafka.connect.bigquery.convert.SchemaConverter;
 import com.wepay.kafka.connect.bigquery.exception.SinkConfigConnectException;
@@ -63,6 +65,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.Optional;
 
 /**
  * A {@link SinkTask} used to translate Kafka Connect {@link SinkRecord SinkRecords} into BigQuery
@@ -79,6 +82,7 @@ public class BigQuerySinkTask extends SinkTask {
   private Map<String, TableId> topicsToBaseTableIds;
   private boolean useMessageTimeDatePartitioning;
   private boolean useTimestampPartitioning;
+  private boolean usePartitionDecorator;
 
   private TopicPartitionManager topicPartitionManager;
 
@@ -87,6 +91,7 @@ public class BigQuerySinkTask extends SinkTask {
   
   private final BigQuery testBigQuery;
   private final Storage testGcs;
+  private final SchemaManager testSchemaManager;
 
   private final UUID uuid = UUID.randomUUID();
   private ScheduledExecutorService gcsLoadExecutor;
@@ -98,6 +103,7 @@ public class BigQuerySinkTask extends SinkTask {
     testBigQuery = null;
     schemaRetriever = null;
     testGcs = null;
+    testSchemaManager = null;
   }
 
   /**
@@ -106,12 +112,14 @@ public class BigQuerySinkTask extends SinkTask {
    * @param testBigQuery {@link BigQuery} to use for testing (likely a mock)
    * @param schemaRetriever {@link SchemaRetriever} to use for testing (likely a mock)
    * @param testGcs {@link Storage} to use for testing (likely a mock)
+   * @param testSchemaManager {@link SchemaManager} to use for testing (likely a mock)
    * @see BigQuerySinkTask#BigQuerySinkTask()
    */
-  public BigQuerySinkTask(BigQuery testBigQuery, SchemaRetriever schemaRetriever, Storage testGcs) {
+  public BigQuerySinkTask(BigQuery testBigQuery, SchemaRetriever schemaRetriever, Storage testGcs, SchemaManager testSchemaManager) {
     this.testBigQuery = testBigQuery;
     this.schemaRetriever = schemaRetriever;
     this.testGcs = testGcs;
+    this.testSchemaManager = testSchemaManager;
   }
 
   @Override
@@ -134,7 +142,7 @@ public class BigQuerySinkTask extends SinkTask {
     }
 
     TableId baseTableId = topicsToBaseTableIds.get(record.topic());
-
+    maybeCreateTable(record, baseTableId);
     PartitionedTableId.Builder builder = new PartitionedTableId.Builder(baseTableId);
     if (false == useTimestampPartitioning) {
       if (useMessageTimeDatePartitioning) {
@@ -151,18 +159,38 @@ public class BigQuerySinkTask extends SinkTask {
     return builder.build();
   }
 
+  /**
+   * Create the table which doesn't exist in BigQuery for a (record's) topic when autoCreateTables config is set to true.
+   * @param record Kafka Sink Record to be streamed into BigQuery.
+   * @param baseTableId BaseTableId in BigQuery.
+   */
+  private void maybeCreateTable(SinkRecord record, TableId baseTableId) {
+    BigQuery bigQuery = getBigQuery();
+    boolean autoCreateTables = config.getBoolean(config.TABLE_CREATE_CONFIG);
+    if (autoCreateTables && bigQuery.getTable(baseTableId) == null) {
+      getSchemaManager(bigQuery).createTable(baseTableId, record.topic());
+      logger.info("Table {} does not exist, auto-created table for topic {}", baseTableId, record.topic());
+    }
+  }
+
   private RowToInsert getRecordRow(SinkRecord record) {
-    Map<String,Object> convertedRecord = recordConverter.convertRecord(record);
+    Map<String, Object> convertedRecord = recordConverter.convertRecord(record, KafkaSchemaRecordType.VALUE);
+    Optional<String> kafkaKeyFieldName = config.getKafkaKeyFieldName();
+    if (kafkaKeyFieldName.isPresent()) {
+      convertedRecord.put(kafkaKeyFieldName.get(), recordConverter.convertRecord(record, KafkaSchemaRecordType.KEY));
+    }
+    Optional<String> kafkaDataFieldName = config.getKafkaDataFieldName();
+    if (kafkaDataFieldName.isPresent()) {
+      convertedRecord.put(kafkaDataFieldName.get(), KafkaDataBuilder.buildKafkaDataRecord(record));
+    }
     if (config.getBoolean(config.SANITIZE_FIELD_NAME_CONFIG)) {
       convertedRecord = FieldNameSanitizer.replaceInvalidKeys(convertedRecord);
     }
-
     if (config.useTimestampPartitioning()) {
       if (!convertedRecord.containsKey(config.getTimestampPartitionFieldName())) {
         logger.warn("Record does not contain the timestamp partitioning field name");
       }
     }
-
     return RowToInsert.of(getRowId(record), convertedRecord);
   }
 
@@ -240,19 +268,22 @@ public class BigQuerySinkTask extends SinkTask {
       return testBigQuery;
     }
     String projectName = config.getString(config.PROJECT_CONFIG);
-    String keyFile = config.getString(config.KEYFILE_CONFIG);
+    String keyFile = config.getKeyFile();
     String keySource = config.getString(config.KEY_SOURCE_CONFIG);
     return new BigQueryHelper().setKeySource(keySource).connect(projectName, keyFile);
   }
 
   private SchemaManager getSchemaManager(BigQuery bigQuery) {
+    if (testSchemaManager != null) {
+      return testSchemaManager;
+    }
     schemaRetriever = config.getSchemaRetriever();
     SchemaConverter<com.google.cloud.bigquery.Schema> schemaConverter =
         config.getSchemaConverter();
-    return new SchemaManager(schemaRetriever,
-        schemaConverter,
-        bigQuery,
-        config.getTimestampPartitionFieldName());
+    Optional<String> kafkaKeyFieldName = config.getKafkaKeyFieldName();
+    Optional<String> kafkaDataFieldName = config.getKafkaDataFieldName();
+    String timestampPartitionFieldName = config.getTimestampPartitionFieldName();
+    return new SchemaManager(schemaRetriever, schemaConverter, bigQuery, timestampPartitionFieldName, kafkaKeyFieldName, kafkaDataFieldName);
   }
 
   private BigQueryWriter getBigQueryWriter() {
@@ -275,7 +306,7 @@ public class BigQuerySinkTask extends SinkTask {
       return testGcs;
     }
     String projectName = config.getString(config.PROJECT_CONFIG);
-    String key = config.getString(config.KEYFILE_CONFIG);
+    String key = config.getKeyFile();
     String keySource = config.getString(config.KEY_SOURCE_CONFIG);
     return new GCSBuilder(projectName).setKey(key).setKeySource(keySource).build();
 
@@ -314,6 +345,8 @@ public class BigQuerySinkTask extends SinkTask {
     useMessageTimeDatePartitioning =
         config.getBoolean(config.BIGQUERY_MESSAGE_TIME_PARTITIONING_CONFIG);
     useTimestampPartitioning = config.useTimestampPartitioning();
+    usePartitionDecorator = 
+            config.getBoolean(config.BIGQUERY_PARTITION_DECORATOR_CONFIG);
     if (hasGCSBQTask) {
       startGCSToBQLoadTask();
     }

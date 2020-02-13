@@ -2,6 +2,7 @@ package com.wepay.kafka.connect.bigquery.schemaregistry.schemaretriever;
 
 import com.google.cloud.bigquery.TableId;
 
+import com.wepay.kafka.connect.bigquery.api.KafkaSchemaRecordType;
 import com.wepay.kafka.connect.bigquery.api.SchemaRetriever;
 
 import io.confluent.connect.avro.AvroData;
@@ -68,8 +69,8 @@ public class SchemaRegistrySchemaRetriever implements SchemaRetriever {
   }
 
   @Override
-  public Schema retrieveSchema(TableId table, String topic) {
-    String subject = getSubject(topic);
+  public Schema retrieveSchema(TableId table, String topic, KafkaSchemaRecordType schemaType) {
+    String subject = getSubject(topic, schemaType);
     try {
       logger.debug("Retrieving schema information for topic {} with subject {}", topic, subject);
       SchemaMetadata latestSchemaMetadata = schemaRegistryClient.getLatestSchemaMetadata(subject);
@@ -87,7 +88,7 @@ public class SchemaRegistrySchemaRetriever implements SchemaRetriever {
   @Override
   public void setLastSeenSchema(TableId table, String topic, Schema schema) { }
 
-  private String getSubject(String topic) {
-    return isForcingSubjectName ? forcedSubjectName : topic + "-value";
+  private String getSubject(String topic, KafkaSchemaRecordType schemaType) {
+    return isForcingSubjectName ? forcedSubjectName : (topic + "-" + schemaType.toString());
   }
 }

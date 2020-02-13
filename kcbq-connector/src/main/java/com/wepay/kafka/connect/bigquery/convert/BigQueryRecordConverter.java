@@ -21,6 +21,7 @@ package com.wepay.kafka.connect.bigquery.convert;
 import com.google.cloud.bigquery.InsertAllRequest.RowToInsert;
 import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverterRegistry;
 import com.wepay.kafka.connect.bigquery.convert.fieldname.FieldNameConverters;
+import com.wepay.kafka.connect.bigquery.api.KafkaSchemaRecordType;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.DebeziumLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.KafkaLogicalConverters;
 import com.wepay.kafka.connect.bigquery.convert.logicaltype.LogicalConverterRegistry;
@@ -71,18 +72,18 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
 
   /**
    * Convert a {@link SinkRecord} into the contents of a BigQuery {@link RowToInsert}.
-   *
-   * @param kafkaConnectRecord The Kafka Connect record to convert. Must be of type {@link Struct},
-   *                           in order to translate into a row format that requires each field to
-   *                           consist of both a name and a value.
+   * @param record The Kafka Connect record to convert. Must be of type {@link Struct},
+   *               in order to translate into a row format that requires each field to
+   *               consist of both a name and a value.
+   * @param recordType The type of the record to convert, either value or key.
    * @return The result BigQuery row content.
    */
-  public Map<String, Object> convertRecord(SinkRecord kafkaConnectRecord) {
-    Schema kafkaConnectSchema = kafkaConnectRecord.valueSchema();
-    Object kafkaConnectValue = kafkaConnectRecord.value();
+  public Map<String, Object> convertRecord(SinkRecord record, KafkaSchemaRecordType recordType) {
+    Schema kafkaConnectSchema = recordType == KafkaSchemaRecordType.KEY ? record.keySchema() : record.valueSchema();
+    Object kafkaConnectStruct = recordType == KafkaSchemaRecordType.KEY ? record.key() : record.value();
     if (kafkaConnectSchema == null) {
-      if (kafkaConnectValue instanceof Map) {
-        return (Map<String, Object>) convertSchemalessRecord(kafkaConnectValue);
+      if (kafkaConnectStruct instanceof Map) {
+        return (Map<String, Object>) convertSchemalessRecord(kafkaConnectStruct);
       }
       throw new ConversionConnectException("Only Map objects supported in absence of schema for " +
               "record conversion to BigQuery format.");
@@ -91,7 +92,7 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
       throw new
           ConversionConnectException("Top-level Kafka Connect schema must be of type 'struct'");
     }
-    return convertStruct(kafkaConnectRecord.value(), kafkaConnectSchema);
+    return convertStruct(kafkaConnectStruct, kafkaConnectSchema);
   }
 
   private Object convertSchemalessRecord(Object value) {
@@ -115,22 +116,22 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
     }
     if (value instanceof Map) {
       return
-        ((Map<Object, Object>) value).entrySet().stream().collect(
-                Collectors.toMap(
-                        entry -> {
-                          if (!(entry.getKey() instanceof String)) {
-                            throw new ConversionConnectException(
-                                    "Failed to convert record to bigQuery format: " +
-                                    "Map objects in absence of schema needs to have string value keys. ");
-                          }
-                          return entry.getKey();
-                        },
-                        entry -> convertSchemalessRecord(entry.getValue())
-                )
-        );
+          ((Map<Object, Object>) value)
+              .entrySet()
+              .stream()
+              .collect(HashMap::new,
+                  (m, e) -> {
+                    if (!(e.getKey() instanceof String)) {
+                      throw new ConversionConnectException(
+                          "Failed to convert record to bigQuery format: " +
+                              "Map objects in absence of schema needs to have string value keys. ");
+                    }
+                    m.put(e.getKey(), convertSchemalessRecord(e.getValue()));
+                  },
+                  HashMap::putAll);
     }
     throw new ConversionConnectException("Unsupported class " + value.getClass() +
-            " found in schemaless record data. Can't convert record to bigQuery format");
+        " found in schemaless record data. Can't convert record to bigQuery format");
   }
 
   @SuppressWarnings("unchecked")
@@ -178,25 +179,29 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
     }
   }
 
-  private Map<String, Object> convertStruct(Object kafkaConnectObject,
-                                            Schema kafkaConnectSchema) {
+  private Map<String, Object> convertStruct(Object kafkaConnectObject, Schema kafkaConnectSchema) {
     Map<String, Object> bigQueryRecord = new HashMap<>();
     List<Field> kafkaConnectSchemaFields = kafkaConnectSchema.fields();
     Struct kafkaConnectStruct = (Struct) kafkaConnectObject;
     for (Field kafkaConnectField : kafkaConnectSchemaFields) {
-      Object bigQueryObject;
-      if (FieldNameConverterRegistry.isRegisteredFieldName(kafkaConnectField.name())) {
-        bigQueryObject = FieldNameConverterRegistry.getConverter(kafkaConnectField.name())
-                .convert(kafkaConnectStruct.get(kafkaConnectField.name()), kafkaConnectField.schema().type());
-      }
-      else {
-        bigQueryObject = convertObject(
-                kafkaConnectStruct.get(kafkaConnectField.name()),
-                kafkaConnectField.schema()
-        );
-      }
-      if (bigQueryObject != null) {
-        bigQueryRecord.put(kafkaConnectField.name(), bigQueryObject);
+      // ignore empty structures
+      boolean isEmptyStruct = kafkaConnectField.schema().type() == Schema.Type.STRUCT &&
+          kafkaConnectField.schema().fields().isEmpty();
+      if (!isEmptyStruct) {
+        Object bigQueryObject;
+        if (FieldNameConverterRegistry.isRegisteredFieldName(kafkaConnectField.name())) {
+          bigQueryObject = FieldNameConverterRegistry.getConverter(kafkaConnectField.name())
+                  .convert(kafkaConnectStruct.get(kafkaConnectField.name()), kafkaConnectField.schema().type());
+        }
+        else {
+          bigQueryObject = convertObject(
+                  kafkaConnectStruct.get(kafkaConnectField.name()),
+                  kafkaConnectField.schema()
+          );
+        }
+        if (bigQueryObject != null) {
+          bigQueryRecord.put(kafkaConnectField.name(), bigQueryObject);
+        }
       }
     }
     return bigQueryRecord;
