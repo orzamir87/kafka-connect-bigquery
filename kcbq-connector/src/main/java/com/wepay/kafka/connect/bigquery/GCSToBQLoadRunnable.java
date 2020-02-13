@@ -18,18 +18,14 @@ package com.wepay.kafka.connect.bigquery;
  */
 
 import com.google.api.gax.paging.Page;
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.BigQueryException;
-import com.google.cloud.bigquery.FormatOptions;
-import com.google.cloud.bigquery.Job;
-import com.google.cloud.bigquery.JobInfo;
-import com.google.cloud.bigquery.LoadJobConfiguration;
-import com.google.cloud.bigquery.TableId;
+import com.google.cloud.bigquery.*;
 import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Bucket;
 import com.google.cloud.storage.StorageException;
 
+import com.wepay.kafka.connect.bigquery.exception.BigQueryConnectException;
+import com.wepay.kafka.connect.bigquery.utils.PartitionedTableId;
 import com.wepay.kafka.connect.bigquery.write.row.GCSToBQWriter;
 
 import org.slf4j.Logger;
@@ -58,6 +54,8 @@ public class GCSToBQLoadRunnable implements Runnable {
 
   private final BigQuery bigQuery;
   private final Bucket bucket;
+  private final SchemaManager schemaManager;
+  private final Boolean updateSchemas;
   private final Map<Job, List<BlobId>> activeJobs;
   private final Set<BlobId> claimedBlobIds;
   private final Set<BlobId> deletableBlobIds;
@@ -73,15 +71,18 @@ public class GCSToBQLoadRunnable implements Runnable {
   private static String SOURCE_URI_FORMAT = "gs://%s/%s";
   public static final Pattern METADATA_TABLE_PATTERN =
           Pattern.compile("((?<project>[^:]+):)?(?<dataset>[^.]+)\\.(?<table>.+)");
+  private static final Pattern TOPIC_FROM_BLOB_PATTERN = Pattern.compile("gs://.*/(?<topic>.*)_.*_.*");
 
   /**
    * Create a {@link GCSToBQLoadRunnable} with the given bigquery, bucket, and ms wait interval.
    * @param bigQuery the {@link BigQuery} instance.
    * @param bucket the the GCS bucket to read from.
    */
-  public GCSToBQLoadRunnable(BigQuery bigQuery, Bucket bucket) {
+  public GCSToBQLoadRunnable(BigQuery bigQuery, Bucket bucket, SchemaManager schemaManager, Boolean updateSchemas) {
     this.bigQuery = bigQuery;
     this.bucket = bucket;
+    this.updateSchemas = updateSchemas;
+    this.schemaManager = schemaManager;
     this.activeJobs = new HashMap<>();
     this.claimedBlobIds = new HashSet<>();
     this.deletableBlobIds = new HashSet<>();
@@ -233,6 +234,10 @@ public class GCSToBQLoadRunnable implements Runnable {
       try {
         if (job.isDone()) {
           logger.trace("Job is marked done: id={}, status={}", job.getJobId(), job.getStatus());
+          if(this.updateSchemas && job.getStatus().getError() != null) {
+            logger.trace("Job has failed: id={}, status={}", job.getJobId(), job.getStatus());
+            checkJobFailuresAndUpdateSchema(job);
+          }
           List<BlobId> blobIdsToDelete = jobEntry.getValue();
           jobIterator.remove();
           logger.trace("Job is removed from iterator: {}", job.getJobId());
@@ -242,9 +247,11 @@ public class GCSToBQLoadRunnable implements Runnable {
           deletableBlobIds.addAll(blobIdsToDelete);
           logger.trace("Completed blobs marked as deletable: {}", blobIdsToDelete);
         }
+
+
       } catch (BigQueryException ex) {
         // log a message.
-        logger.warn("GCS to BQ load job failed", ex);
+        logger.error("GCS to BQ load job failed", ex);
         // remove job from active jobs (it's not active anymore)
         List<BlobId> blobIds = activeJobs.get(job);
         jobIterator.remove();
@@ -301,6 +308,60 @@ public class GCSToBQLoadRunnable implements Runnable {
                   failedDeletes);
     } catch (StorageException ex) {
       logger.warn("Storage exception while attempting to delete blobs", ex);
+    }
+  }
+
+  private void checkJobFailuresAndUpdateSchema(Job job) {
+    if (onlyContainsInvalidSchemaErrors(job.getStatus().getExecutionErrors())) {
+      LoadJobConfiguration c = job.getConfiguration();
+      PartitionedTableId table = (new PartitionedTableId.Builder(c.getDestinationTable())).build();
+      String blobUri = c.getSourceUris().get(0);
+      Matcher matcher = TOPIC_FROM_BLOB_PATTERN.matcher(blobUri);
+      if (!matcher.find()) {
+        String errorStr = String.format("Found blob `%s` with un-parsable uri.", blobUri);
+        logger.error(errorStr);
+        throw new BigQueryException(-1, errorStr, job.getStatus().getError());
+      }
+      String topic = matcher.group("topic");
+      attemptSchemaUpdate(table, topic);
+    } else {
+      throw new BigQueryException(-1, null, job.getStatus().getError());
+    }
+  }
+
+  /*
+   * Currently, the only way to determine the cause of an insert all failure is by examining the map
+   * object returned by the insertErrors() method of an insert all response. The only way to
+   * determine the cause of each individual error is by manually examining each error's reason() and
+   * message() strings, and guessing what they mean. Ultimately, the goal of this method is to
+   * return whether or not an insertion failed due solely to a mismatch between the schemas of the
+   * inserted rows and the schema of the actual BigQuery table.
+   * This is why we can't have nice things, Google.
+   */
+  private boolean onlyContainsInvalidSchemaErrors(List<BigQueryError> errors) {
+    boolean invalidSchemaError = false;
+    for (BigQueryError error : errors) {
+      if (error.getReason().equals("invalid") && error.getMessage().contains("no such field")) {
+        invalidSchemaError = true;
+      } else if (!error.getReason().equals("stopped")) {
+        /* if some rows are in the old schema format, and others aren't, the old schema
+         * formatted rows will show up as error: stopped. We still want to continue if this is
+         * the case, because these errors don't represent a unique error if there are also
+         * invalidSchemaErrors.
+         */
+        return false;
+      }
+    }
+    // if we only saw "stopped" errors, we want to return false. (otherwise, return true)
+    return invalidSchemaError;
+  }
+
+  private void attemptSchemaUpdate(PartitionedTableId tableId, String topic) {
+    try {
+      schemaManager.updateSchema(tableId.getBaseTableId(), topic);
+    } catch (BigQueryException exception) {
+      throw new BigQueryConnectException(
+              "Failed to update table schema for: " + tableId.getBaseTableId(), exception);
     }
   }
 
