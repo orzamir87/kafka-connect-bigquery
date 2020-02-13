@@ -144,16 +144,18 @@ public class BigQuerySinkTask extends SinkTask {
     TableId baseTableId = topicsToBaseTableIds.get(record.topic());
     maybeCreateTable(record, baseTableId);
     PartitionedTableId.Builder builder = new PartitionedTableId.Builder(baseTableId);
-    if (false == useTimestampPartitioning) {
-      if (useMessageTimeDatePartitioning) {
-        if (record.timestampType() == TimestampType.NO_TIMESTAMP_TYPE) {
-          throw new ConnectException(
-                  "Message has no timestamp type, cannot use message timestamp to partition.");
-        }
+    if (!useTimestampPartitioning) {
+      if (usePartitionDecorator) {
+        if (useMessageTimeDatePartitioning) {
+          if (record.timestampType() == TimestampType.NO_TIMESTAMP_TYPE) {
+            throw new ConnectException(
+                    "Message has no timestamp type, cannot use message timestamp to partition.");
+          }
 
-        builder.setDayPartition(record.timestamp());
-      } else {
-        builder.setDayPartitionForNow();
+          builder.setDayPartition(record.timestamp());
+        } else {
+          builder.setDayPartitionForNow();
+        }
       }
     }
     return builder.build();

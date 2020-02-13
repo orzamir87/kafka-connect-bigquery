@@ -3,6 +3,7 @@ package com.wepay.kafka.connect.bigquery.convert.fieldname;
 import static org.junit.Assert.assertEquals;
 
 import com.google.cloud.bigquery.LegacySQLTypeName;
+import com.wepay.kafka.connect.bigquery.api.KafkaSchemaRecordType;
 import com.wepay.kafka.connect.bigquery.convert.BigQueryRecordConverter;
 import com.wepay.kafka.connect.bigquery.convert.BigQuerySchemaConverter;
 import org.apache.kafka.connect.data.Schema;
@@ -113,7 +114,8 @@ public class FieldNameConverterTest {
         SinkRecord kafkaConnectRecord = spoofSinkRecord(kafkaConnectSchema, kafkaConnectStruct);
 
         Map<String, Object> bigQueryTestRecord =
-                new BigQueryRecordConverter(SHOULD_CONVERT_DOUBLE, fieldNameMap).convertRecord(kafkaConnectRecord);
+                new BigQueryRecordConverter(SHOULD_CONVERT_DOUBLE, fieldNameMap)
+                        .convertRecord(kafkaConnectRecord, KafkaSchemaRecordType.VALUE);
         assertEquals(bigQueryExpectedRecord, bigQueryTestRecord);
     }
 

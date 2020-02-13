@@ -51,7 +51,7 @@ public class SchemaManager {
       SchemaRetriever schemaRetriever,
       SchemaConverter<com.google.cloud.bigquery.Schema> schemaConverter,
       BigQuery bigQuery,
-      String timestampPartitionFieldName
+      String timestampPartitionFieldName,
       Optional<String> kafkaKeyFieldName,
       Optional<String> kafkaDataFieldName) {
     this.schemaRetriever = schemaRetriever;

@@ -283,7 +283,7 @@ public class BigQuerySchemaConverterTest {
   @Test
   public void testEmptyStruct() { // Empty struct
     com.google.cloud.bigquery.Schema bigQueryTestOuterSchema =
-        new BigQuerySchemaConverter(false).convertSchema(
+        new BigQuerySchemaConverter(false, EMPTY_MAP).convertSchema(
             SchemaBuilder
                 .struct()
                 .build()
@@ -326,7 +326,7 @@ public class BigQuerySchemaConverterTest {
     com.google.cloud.bigquery.Schema bigQueryExpectedOuterSchema =
         com.google.cloud.bigquery.Schema.of(bigQueryOuterRecord);
     com.google.cloud.bigquery.Schema bigQueryTestOuterSchema =
-        new BigQuerySchemaConverter(false).convertSchema(
+        new BigQuerySchemaConverter(false, EMPTY_MAP).convertSchema(
             SchemaBuilder
                 .struct()
                 .field(outerFieldStructName, kafkaConnectOuterSchema)

@@ -126,7 +126,7 @@ public class BigQuerySchemaConverter implements SchemaConverter<com.google.cloud
     Optional<com.google.cloud.bigquery.Field.Builder> result;
     Schema.Type kafkaConnectSchemaType = kafkaConnectSchema.type();
     if (FieldNameConverterRegistry.isRegisteredFieldName(fieldName)) {
-      result = convertSpecificFieldName(fieldName);
+      result = Optional.of(convertSpecificFieldName(fieldName));
     } else if (LogicalConverterRegistry.isRegisteredLogicalType(kafkaConnectSchema.name())) {
       result = Optional.of(convertLogical(kafkaConnectSchema, fieldName));
     } else if (PRIMITIVE_TYPE_MAP.containsKey(kafkaConnectSchemaType)) {

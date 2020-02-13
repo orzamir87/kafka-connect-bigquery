@@ -104,7 +104,7 @@ public class BigQuerySinkConnector extends SinkConnector {
     SchemaConverter<com.google.cloud.bigquery.Schema> schemaConverter = config.getSchemaConverter();
     Optional<String> kafkaKeyFieldName = config.getKafkaKeyFieldName();
     Optional<String> kafkaDataFieldName = config.getKafkaDataFieldName();
-    String timestampPartitionFieldName = config.getTimestampPartitionFieldName()
+    String timestampPartitionFieldName = config.getTimestampPartitionFieldName();
     return new SchemaManager(schemaRetriever, schemaConverter, bigQuery, timestampPartitionFieldName, kafkaKeyFieldName, kafkaDataFieldName);
   }
 
