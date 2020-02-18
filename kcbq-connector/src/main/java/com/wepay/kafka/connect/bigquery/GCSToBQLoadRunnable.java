@@ -225,30 +225,45 @@ public class GCSToBQLoadRunnable implements Runnable {
     Iterator<Map.Entry<Job, List<BlobId>>> jobIterator = activeJobs.entrySet().iterator();
     int successCount = 0;
     int failureCount = 0;
+    int runningCount = 0;
+
+    ArrayList<String> updatedTablesThisRun = new ArrayList<>();
 
     while (jobIterator.hasNext()) {
       Map.Entry<Job, List<BlobId>> jobEntry = jobIterator.next();
       Job job = jobEntry.getKey();
-      logger.debug("Checking next job: {}", job.getJobId());
 
       try {
-        if (job.isDone()) {
-          logger.trace("Job is marked done: id={}, status={}", job.getJobId(), job.getStatus());
-          if(this.updateSchemas && job.getStatus().getError() != null) {
-            logger.trace("Job has failed: id={}, status={}", job.getJobId(), job.getStatus());
-            checkJobFailuresAndUpdateSchema(job);
-          }
-          List<BlobId> blobIdsToDelete = jobEntry.getValue();
-          jobIterator.remove();
-          logger.trace("Job is removed from iterator: {}", job.getJobId());
-          successCount++;
-          claimedBlobIds.removeAll(blobIdsToDelete);
-          logger.trace("Completed blobs have been removed from claimed set: {}", blobIdsToDelete);
-          deletableBlobIds.addAll(blobIdsToDelete);
-          logger.trace("Completed blobs marked as deletable: {}", blobIdsToDelete);
+        Job reloadJob = job.reload(BigQuery.JobOption.fields(BigQuery.JobField.STATUS));
+        if (reloadJob == null) {
+          throw new BigQueryException(-1, "job not found.");
         }
+        job = reloadJob;
 
-
+        logger.info("Checking next job: id={}, status={}", job.getJobId(), job.getStatus());
+        if (JobStatus.State.DONE.equals(job.getStatus().getState())) {
+          if (job.getStatus().getError() == null) {
+            logger.trace("Job is marked done: id={}, status={}", job.getJobId(), job.getStatus());
+            List<BlobId> blobIdsToDelete = jobEntry.getValue();
+            jobIterator.remove();
+            logger.trace("Job is removed from iterator: {}", job.getJobId());
+            successCount++;
+            claimedBlobIds.removeAll(blobIdsToDelete);
+            logger.trace("Completed blobs have been removed from claimed set: {}", blobIdsToDelete);
+            deletableBlobIds.addAll(blobIdsToDelete);
+            logger.trace("Completed blobs marked as deletable: {}", blobIdsToDelete);
+          } else {
+            logger.info("Job has failed: id={}, status={}", job.getJobId(), job.getStatus());
+            if (this.updateSchemas &&
+                    onlyContainsInvalidSchemaErrors(job.getStatus().getExecutionErrors())) {
+              logger.info("Job contains schema errors: id={}, status={}", job.getJobId(), job.getStatus());
+              checkJobFailuresAndUpdateSchema(job, updatedTablesThisRun);
+            }
+            throw new BigQueryException(-1, null, job.getStatus().getError());
+          }
+        } else {
+          runningCount++;
+        }
       } catch (BigQueryException ex) {
         // log a message.
         logger.error("GCS to BQ load job failed", ex);
@@ -258,11 +273,10 @@ public class GCSToBQLoadRunnable implements Runnable {
         // unclaim blobs
         claimedBlobIds.removeAll(blobIds);
         failureCount++;
-      } finally {
-        logger.info("GCS To BQ job tally: {} successful jobs, {} failed jobs.",
-                    successCount, failureCount);
       }
     }
+    logger.info("GCS To BQ job tally: {} successful jobs, {} failed jobs, {} running jobs.",
+            successCount, failureCount, runningCount);
   }
 
   /**
@@ -311,48 +325,33 @@ public class GCSToBQLoadRunnable implements Runnable {
     }
   }
 
-  private void checkJobFailuresAndUpdateSchema(Job job) {
-    if (onlyContainsInvalidSchemaErrors(job.getStatus().getExecutionErrors())) {
-      LoadJobConfiguration c = job.getConfiguration();
-      PartitionedTableId table = (new PartitionedTableId.Builder(c.getDestinationTable())).build();
-      String blobUri = c.getSourceUris().get(0);
-      Matcher matcher = TOPIC_FROM_BLOB_PATTERN.matcher(blobUri);
-      if (!matcher.find()) {
-        String errorStr = String.format("Found blob `%s` with un-parsable uri.", blobUri);
-        logger.error(errorStr);
-        throw new BigQueryException(-1, errorStr, job.getStatus().getError());
-      }
-      String topic = matcher.group("topic");
-      attemptSchemaUpdate(table, topic);
-    } else {
-      throw new BigQueryException(-1, null, job.getStatus().getError());
+  private void checkJobFailuresAndUpdateSchema(Job job, ArrayList<String> updatedTablesThisRun) {
+    LoadJobConfiguration c = job.getConfiguration();
+    PartitionedTableId table = (new PartitionedTableId.Builder(c.getDestinationTable())).build();
+    logger.info("Schema changed for table: {}", table.getFullTableName());
+    if (updatedTablesThisRun.contains(table.getFullTableName())) {
+      return;
     }
+    updatedTablesThisRun.add(table.getFullTableName());
+    String blobUri = c.getSourceUris().get(0);
+    Matcher matcher = TOPIC_FROM_BLOB_PATTERN.matcher(blobUri);
+    if (!matcher.find()) {
+      String errorStr = String.format("Found blob `%s` with un-parsable uri.", blobUri);
+      logger.error(errorStr);
+      throw new BigQueryException(-1, errorStr, job.getStatus().getError());
+    }
+    String topic = matcher.group("topic");
+    attemptSchemaUpdate(table, topic);
   }
 
-  /*
-   * Currently, the only way to determine the cause of an insert all failure is by examining the map
-   * object returned by the insertErrors() method of an insert all response. The only way to
-   * determine the cause of each individual error is by manually examining each error's reason() and
-   * message() strings, and guessing what they mean. Ultimately, the goal of this method is to
-   * return whether or not an insertion failed due solely to a mismatch between the schemas of the
-   * inserted rows and the schema of the actual BigQuery table.
-   * This is why we can't have nice things, Google.
-   */
   private boolean onlyContainsInvalidSchemaErrors(List<BigQueryError> errors) {
     boolean invalidSchemaError = false;
     for (BigQueryError error : errors) {
-      if (error.getReason().equals("invalid") && error.getMessage().contains("no such field")) {
+      if (error.getReason().toLowerCase().equals("invalid") &&
+              error.getMessage().toLowerCase().contains("no such field")) {
         invalidSchemaError = true;
-      } else if (!error.getReason().equals("stopped")) {
-        /* if some rows are in the old schema format, and others aren't, the old schema
-         * formatted rows will show up as error: stopped. We still want to continue if this is
-         * the case, because these errors don't represent a unique error if there are also
-         * invalidSchemaErrors.
-         */
-        return false;
       }
     }
-    // if we only saw "stopped" errors, we want to return false. (otherwise, return true)
     return invalidSchemaError;
   }
 
