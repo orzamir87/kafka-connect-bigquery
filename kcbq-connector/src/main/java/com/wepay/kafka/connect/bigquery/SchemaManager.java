@@ -70,7 +70,7 @@ public class SchemaManager {
   public void createTable(TableId table, String topic) {
     Schema kafkaValueSchema = schemaRetriever.retrieveSchema(table, topic, KafkaSchemaRecordType.VALUE);
     Schema kafkaKeySchema = kafkaKeyFieldName.isPresent() ? schemaRetriever.retrieveSchema(table, topic, KafkaSchemaRecordType.KEY) : null;
-    bigQuery.create(constructTableInfo(table, kafkaKeySchema, kafkaValueSchema));
+    bigQuery.create(constructTableInfo(table, kafkaKeySchema, kafkaValueSchema, null));
   }
 
   /**
@@ -81,15 +81,18 @@ public class SchemaManager {
   public void updateSchema(TableId table, String topic) {
     Schema kafkaValueSchema = schemaRetriever.retrieveSchema(table, topic, KafkaSchemaRecordType.VALUE);
     Schema kafkaKeySchema = kafkaKeyFieldName.isPresent() ? schemaRetriever.retrieveSchema(table, topic, KafkaSchemaRecordType.KEY) : null;
-    TableInfo tableInfo = constructTableInfo(table, kafkaKeySchema, kafkaValueSchema);
+    com.google.cloud.bigquery.Schema existingSchema = bigQuery.getTable(table).getDefinition().getSchema();
+    TableInfo tableInfo = constructTableInfo(table, kafkaKeySchema, kafkaValueSchema, existingSchema);
     logger.info("Attempting to update table `{}` with schema {}",
         table, tableInfo.getDefinition().getSchema());
     bigQuery.update(tableInfo);
   }
 
   // package private for testing.
-  TableInfo constructTableInfo(TableId table, Schema kafkaKeySchema, Schema kafkaValueSchema) {
-    com.google.cloud.bigquery.Schema bigQuerySchema = getBigQuerySchema(kafkaKeySchema, kafkaValueSchema);
+  TableInfo constructTableInfo(TableId table, Schema kafkaKeySchema, Schema kafkaValueSchema,
+                               com.google.cloud.bigquery.Schema existingSchema) {
+    com.google.cloud.bigquery.Schema bigQuerySchema =
+            getBigQuerySchema(kafkaKeySchema, kafkaValueSchema, existingSchema);
     TimePartitioning timePartitioning = TimePartitioning.of(Type.DAY);
     if (!this.timestampPartitionFieldName.isEmpty()) {
       // timestamp based partitioning vs ingestion time partitioning
@@ -107,7 +110,8 @@ public class SchemaManager {
     return tableInfoBuilder.build();
   }
 
-  private com.google.cloud.bigquery.Schema getBigQuerySchema(Schema kafkaKeySchema, Schema kafkaValueSchema) {
+  private com.google.cloud.bigquery.Schema getBigQuerySchema(Schema kafkaKeySchema, Schema kafkaValueSchema,
+                                                             com.google.cloud.bigquery.Schema existingSchema) {
       List<Field> allFields = new ArrayList<> ();
       com.google.cloud.bigquery.Schema valueSchema = schemaConverter.convertSchema(kafkaValueSchema);
       allFields.addAll(valueSchema.getFields());
@@ -120,6 +124,16 @@ public class SchemaManager {
       if (kafkaDataFieldName.isPresent()) {
           Field kafkaDataField = KafkaDataBuilder.buildKafkaDataField(kafkaDataFieldName.get());
           allFields.add(kafkaDataField);
+      }
+
+      //Support field deletion which is Avro backward compatible
+      if (existingSchema != null) {
+          for (Field field : existingSchema.getFields()) {
+              if (!allFields.contains(field) && field.getMode() == Field.Mode.NULLABLE) {
+                  allFields.add(field);
+              }
+              //else it will fail during schema update
+          }
       }
       return com.google.cloud.bigquery.Schema.of(allFields);
   }

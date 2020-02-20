@@ -347,7 +347,7 @@ public class GCSToBQLoadRunnable implements Runnable {
   private boolean onlyContainsInvalidSchemaErrors(List<BigQueryError> errors) {
     boolean invalidSchemaError = false;
     for (BigQueryError error : errors) {
-      if (error.getReason().toLowerCase().equals("invalid") &&
+      if (error.getReason().equalsIgnoreCase("invalid") &&
               error.getMessage().toLowerCase().contains("no such field")) {
         invalidSchemaError = true;
       }

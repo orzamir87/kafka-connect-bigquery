@@ -21,12 +21,7 @@ package com.wepay.kafka.connect.bigquery;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.google.cloud.bigquery.BigQuery;
-import com.google.cloud.bigquery.Field;
-import com.google.cloud.bigquery.LegacySQLTypeName;
-import com.google.cloud.bigquery.StandardTableDefinition;
-import com.google.cloud.bigquery.TableId;
-import com.google.cloud.bigquery.TableInfo;
+import com.google.cloud.bigquery.*;
 
 import com.wepay.kafka.connect.bigquery.api.SchemaRetriever;
 import com.wepay.kafka.connect.bigquery.convert.SchemaConverter;
@@ -71,7 +66,7 @@ public class SchemaManagerTest {
     when(mockSchemaConverter.convertSchema(mockKafkaSchema)).thenReturn(fakeBigQuerySchema);
     when(mockKafkaSchema.doc()).thenReturn(testDoc);
 
-    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema);
+    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema, null);
 
     Assert.assertEquals("Kafka doc does not match BigQuery table description",
                         testDoc, tableInfo.getDescription());
@@ -112,7 +107,7 @@ public class SchemaManagerTest {
     when(mockSchemaConverter.convertSchema(mockKafkaSchema)).thenReturn(fakeBigQuerySchema);
     when(mockKafkaSchema.doc()).thenReturn(testDoc);
 
-    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema);
+    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema, null);
 
     Assert.assertEquals("Kafka doc does not match BigQuery table description",
         testDoc, tableInfo.getDescription());
@@ -153,7 +148,7 @@ public class SchemaManagerTest {
     when(mockSchemaConverter.convertSchema(mockKafkaSchema)).thenReturn(fakeBigQuerySchema);
     when(mockKafkaSchema.doc()).thenReturn(testDoc);
 
-    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema);
+    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema, null);
 
     Assert.assertEquals("Kafka doc does not match BigQuery table description",
         testDoc, tableInfo.getDescription());
@@ -161,4 +156,64 @@ public class SchemaManagerTest {
     Assert.assertNull("Timestamp partition field name is not null",
         ((StandardTableDefinition) tableInfo.getDefinition()).getTimePartitioning().getField());
   }
+
+  @Test
+  public void testSchemaUpdateBackwardCompatible() {
+    final String testTableName = "testTable";
+    final String testDatasetName = "testDataset";
+    final String testDoc = "test doc";
+    final TableId tableId = TableId.of(testDatasetName, testTableName);
+
+    SchemaRetriever mockSchemaRetriever = mock(SchemaRetriever.class);
+    @SuppressWarnings("unchecked")
+    SchemaConverter<com.google.cloud.bigquery.Schema> mockSchemaConverter =
+            (SchemaConverter<com.google.cloud.bigquery.Schema>) mock(SchemaConverter.class);
+    BigQuery mockBigQuery = mock(BigQuery.class);
+
+    Optional<String> kafkaKeyFieldName = Optional.empty();
+    Optional<String> kafkaDataFieldName = Optional.empty();
+
+    SchemaManager schemaManager = new SchemaManager(mockSchemaRetriever,
+            mockSchemaConverter,
+            mockBigQuery,
+            "",
+            kafkaKeyFieldName,
+            kafkaDataFieldName);
+
+    Schema mockKafkaSchema = mock(Schema.class);
+
+    com.google.cloud.bigquery.Schema fakeBigQuerySchemaFromKafka =
+            com.google.cloud.bigquery.Schema.of(
+                    Field.of("mock field", LegacySQLTypeName.STRING),
+                    Field.of("mock field new", LegacySQLTypeName.STRING)
+            );
+
+    com.google.cloud.bigquery.Schema fakeBigQueryCurrentSchema =
+            com.google.cloud.bigquery.Schema.of(
+                    Field.of("mock field", LegacySQLTypeName.STRING),
+                    Field.of("mock field deleted", LegacySQLTypeName.STRING)
+            );
+
+    com.google.cloud.bigquery.Schema fakeBigQueryUpdatedSchema =
+            com.google.cloud.bigquery.Schema.of(
+                    Field.of("mock field", LegacySQLTypeName.STRING),
+                    Field.of("mock field deleted", LegacySQLTypeName.STRING),
+                    Field.of("mock field new", LegacySQLTypeName.STRING)
+            );
+
+    when(mockSchemaConverter.convertSchema(mockKafkaSchema)).thenReturn(fakeBigQuerySchemaFromKafka);
+    when(mockKafkaSchema.doc()).thenReturn(testDoc);
+
+    TableInfo tableInfo = schemaManager.constructTableInfo(tableId, mockKafkaSchema, mockKafkaSchema, fakeBigQueryCurrentSchema);
+
+    Assert.assertEquals("Kafka doc does not match BigQuery table description",
+            testDoc, tableInfo.getDescription());
+
+    FieldList actualFields = tableInfo.getDefinition().getSchema().getFields();
+    FieldList expectedFields = fakeBigQueryUpdatedSchema.getFields();
+
+    Assert.assertTrue(expectedFields.containsAll(actualFields));
+    Assert.assertTrue(actualFields.containsAll(expectedFields));
+  }
+
 }

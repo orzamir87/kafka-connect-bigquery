@@ -167,11 +167,15 @@ public class BigQuerySinkTask extends SinkTask {
    * @param baseTableId BaseTableId in BigQuery.
    */
   private void maybeCreateTable(SinkRecord record, TableId baseTableId) {
-    BigQuery bigQuery = getBigQuery();
-    boolean autoCreateTables = config.getBoolean(config.TABLE_CREATE_CONFIG);
-    if (autoCreateTables && bigQuery.getTable(baseTableId) == null) {
-      getSchemaManager(bigQuery).createTable(baseTableId, record.topic());
-      logger.info("Table {} does not exist, auto-created table for topic {}", baseTableId, record.topic());
+    try {
+      BigQuery bigQuery = getBigQuery();
+      boolean autoCreateTables = config.getBoolean(config.TABLE_CREATE_CONFIG);
+      if (autoCreateTables && bigQuery.getTable(baseTableId) == null) {
+        getSchemaManager(bigQuery).createTable(baseTableId, record.topic());
+        logger.info("Table {} does not exist, auto-created table for topic {}", baseTableId, record.topic());
+      }
+    } catch (Exception e) {
+      logger.error("Failed to maybeCreateTable, Table: {}", baseTableId);
     }
   }
 
