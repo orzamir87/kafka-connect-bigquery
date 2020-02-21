@@ -191,13 +191,15 @@ public class SchemaManagerTest {
     com.google.cloud.bigquery.Schema fakeBigQueryCurrentSchema =
             com.google.cloud.bigquery.Schema.of(
                     Field.of("mock field", LegacySQLTypeName.STRING),
-                    Field.of("mock field deleted", LegacySQLTypeName.STRING)
+                    Field.newBuilder("mock field deleted", LegacySQLTypeName.STRING)
+                            .setMode(Field.Mode.NULLABLE).build()
             );
 
     com.google.cloud.bigquery.Schema fakeBigQueryUpdatedSchema =
             com.google.cloud.bigquery.Schema.of(
                     Field.of("mock field", LegacySQLTypeName.STRING),
-                    Field.of("mock field deleted", LegacySQLTypeName.STRING),
+                    Field.newBuilder("mock field deleted", LegacySQLTypeName.STRING)
+                            .setMode(Field.Mode.NULLABLE).build(),
                     Field.of("mock field new", LegacySQLTypeName.STRING)
             );
 

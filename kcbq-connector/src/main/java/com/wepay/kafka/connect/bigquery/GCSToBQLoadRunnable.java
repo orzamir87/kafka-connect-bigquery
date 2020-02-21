@@ -19,10 +19,7 @@ package com.wepay.kafka.connect.bigquery;
 
 import com.google.api.gax.paging.Page;
 import com.google.cloud.bigquery.*;
-import com.google.cloud.storage.Blob;
-import com.google.cloud.storage.BlobId;
-import com.google.cloud.storage.Bucket;
-import com.google.cloud.storage.StorageException;
+import com.google.cloud.storage.*;
 
 import com.wepay.kafka.connect.bigquery.exception.BigQueryConnectException;
 import com.wepay.kafka.connect.bigquery.utils.PartitionedTableId;
@@ -54,6 +51,7 @@ public class GCSToBQLoadRunnable implements Runnable {
 
   private final BigQuery bigQuery;
   private final Bucket bucket;
+  private final String gcsDirectory;
   private final SchemaManager schemaManager;
   private final Boolean updateSchemas;
   private final Map<Job, List<BlobId>> activeJobs;
@@ -78,9 +76,10 @@ public class GCSToBQLoadRunnable implements Runnable {
    * @param bigQuery the {@link BigQuery} instance.
    * @param bucket the the GCS bucket to read from.
    */
-  public GCSToBQLoadRunnable(BigQuery bigQuery, Bucket bucket, SchemaManager schemaManager, Boolean updateSchemas) {
+  public GCSToBQLoadRunnable(BigQuery bigQuery, Bucket bucket, String gcsDirectory, SchemaManager schemaManager, Boolean updateSchemas) {
     this.bigQuery = bigQuery;
     this.bucket = bucket;
+    this.gcsDirectory = gcsDirectory;
     this.updateSchemas = updateSchemas;
     this.schemaManager = schemaManager;
     this.activeJobs = new HashMap<>();
@@ -102,7 +101,9 @@ public class GCSToBQLoadRunnable implements Runnable {
     Map<TableId, Long> tableToCurrentLoadSize = new HashMap<>();
 
     logger.trace("Starting GCS bucket list");
-    Page<Blob> list = bucket.list();
+    Page<Blob> list = this.gcsDirectory == null ?
+            bucket.list() :
+            bucket.list(Storage.BlobListOption.prefix(gcsDirectory + "/"));
     logger.trace("Finished GCS bucket list");
 
     for (Blob blob : list.iterateAll()) {
